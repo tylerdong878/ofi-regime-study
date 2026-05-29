@@ -1,0 +1,9 @@
+websockets
+pandas
+numpy
+pyarrow
+statsmodels
+matplotlib
+seaborn
+jupyter
+sortedcontainers
