@@ -15,7 +15,7 @@ def load(path):
 
 def build_features(df, bucket="1s", horizon=5, vol_window=300):
     """Aggregate raw snapshots into a per-bucket modeling frame.
-    
+
     Returns columns: ofi (summed per bucket), mid, ret, fwd_ret, vol, regime.
     """
     df = df.copy()
