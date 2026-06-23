@@ -12,5 +12,13 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(nlohmann_json)
 
+set(USE_TLS ON CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    ixwebsocket
+    GIT_REPOSITORY https://github.com/machinezone/IXWebSocket.git
+    GIT_TAG v11.4.5
+)
+FetchContent_MakeAvailable(ixwebsocket)
+
 add_executable(ingest src/main.cpp)
-target_link_libraries(ingest PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(ingest PRIVATE nlohmann_json::nlohmann_json ixwebsocket)
