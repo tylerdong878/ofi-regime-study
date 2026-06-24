@@ -22,3 +22,5 @@ FetchContent_MakeAvailable(ixwebsocket)
 
 add_executable(ingest src/main.cpp)
 target_link_libraries(ingest PRIVATE nlohmann_json::nlohmann_json ixwebsocket)
+
+add_executable(test_orderbook src/test_orderbook.cpp)
