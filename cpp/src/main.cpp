@@ -7,6 +7,7 @@
 #include <vector>
 #include <utility>
 #include <string>
+#include <algorithm>
 
 #include <ixwebsocket/IXWebSocket.h>
 #include <ixwebsocket/IXNetSystem.h>
@@ -31,6 +32,7 @@ int main() {
     out << "\n";
 
     OrderBook book;
+    std::vector<long long> latencies_ns;
     ix::WebSocket ws;
     ws.setUrl("wss://ws-feed.exchange.coinbase.com");
 
@@ -46,6 +48,7 @@ int main() {
         }
         if (msg->type != ix::WebSocketMessageType::Message) return;
 
+        auto t0 = std::chrono::steady_clock::now();
         json data = json::parse(msg->str);
         std::string type = data["type"];
 
@@ -78,14 +81,30 @@ int main() {
                 else out << ",,";
             }
             out << "\n";
+            auto t1 = std::chrono::steady_clock::now();
+            latencies_ns.push_back(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
         }
     });
 
+    auto start = std::chrono::steady_clock::now();
     ws.start();
     std::this_thread::sleep_for(std::chrono::seconds(30));
     ws.stop();
+    auto end = std::chrono::steady_clock::now();
 
     out.close();
+    std::sort(latencies_ns.begin(), latencies_ns.end());
+    size_t n = latencies_ns.size();
+    if (n > 0) {
+        double elapsed_s = std::chrono::duration<double>(end - start).count();
+        double p50_us = latencies_ns[n/2] / 1000.0;
+        double p99_us = latencies_ns[(size_t)(n * 0.99)] / 1000.0;
+        std::cout << "messages processed: " << n << "\n";
+        std::cout << "throughput: " << (n / elapsed_s) << " msg/sec\n";
+        std::cout << "latency p50: " << p50_us << " us\n";
+        std::cout << "latency p99: " << p99_us << " us\n";
+    }
     ix::uninitNetSystem();
     std::cout << "capture done -> data/btc_cpp.csv\n";
     return 0;
