@@ -20,7 +20,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(ixwebsocket)
 
+find_package(Arrow REQUIRED)
+find_package(Parquet REQUIRED)
+
 add_executable(ingest src/main.cpp)
-target_link_libraries(ingest PRIVATE nlohmann_json::nlohmann_json ixwebsocket)
+target_link_libraries(ingest PRIVATE 
+    nlohmann_json::nlohmann_json 
+    ixwebsocket
+    Arrow::arrow_shared
+    Parquet::parquet_shared)
 
 add_executable(test_orderbook src/test_orderbook.cpp)

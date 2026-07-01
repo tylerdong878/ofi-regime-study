@@ -1,6 +1,4 @@
 #include <iostream>
-#include <fstream>
-#include <iomanip>
 #include <filesystem>
 #include <thread>
 #include <chrono>
@@ -8,10 +6,15 @@
 #include <utility>
 #include <string>
 #include <algorithm>
+#include <cstdint>
 
 #include <ixwebsocket/IXWebSocket.h>
 #include <ixwebsocket/IXNetSystem.h>
 #include <nlohmann/json.hpp>
+
+#include <arrow/api.h>
+#include <arrow/io/api.h>
+#include <parquet/arrow/writer.h>
 
 #include "orderbook.hpp"
 
@@ -19,17 +22,12 @@ using json = nlohmann::json;
 
 int main() {
     ix::initNetSystem();
-
     std::filesystem::create_directories("data");
-    std::ofstream out("data/btc_cpp.csv");
-    out << std::setprecision(10);
 
-    out << "timestamp,recv_ns";
-    for (int i = 1; i <= 5; ++i) {
-        out << ",bid_px_" << i << ",bid_sz_" << i
-            << ",ask_px_" << i << ",ask_sz_" << i;
-    }
-    out << "\n";
+    // in-memory column buffers (one vector per output column)
+    std::vector<std::string> ts_col;
+    std::vector<int64_t> recv_col;
+    std::vector<double> bid_px[5], bid_sz[5], ask_px[5], ask_sz[5];
 
     OrderBook book;
     std::vector<long long> latencies_ns;
@@ -72,15 +70,17 @@ int main() {
                                 std::chrono::system_clock::now().time_since_epoch()).count();
             auto bids = book.top_bids(5);
             auto asks = book.top_asks(5);
+            if (bids.size() < 5 || asks.size() < 5) return;
 
-            out << data["time"].get<std::string>() << "," << recv_ns;
+            ts_col.push_back(data["time"].get<std::string>());
+            recv_col.push_back(recv_ns);
             for (int i = 0; i < 5; ++i) {
-                if (i < (int)bids.size()) out << "," << bids[i].first << "," << bids[i].second;
-                else out << ",,";
-                if (i < (int)asks.size()) out << "," << asks[i].first << "," << asks[i].second;
-                else out << ",,";
+                bid_px[i].push_back(bids[i].first);
+                bid_sz[i].push_back(bids[i].second);
+                ask_px[i].push_back(asks[i].first);
+                ask_sz[i].push_back(asks[i].second);
             }
-            out << "\n";
+
             auto t1 = std::chrono::steady_clock::now();
             latencies_ns.push_back(
                 std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
@@ -93,7 +93,51 @@ int main() {
     ws.stop();
     auto end = std::chrono::steady_clock::now();
 
-    out.close();
+    // build Arrow arrays from buffered columns
+    auto make_doubles = [](const std::vector<double>& v) {
+        arrow::DoubleBuilder b;
+        (void)b.AppendValues(v);
+        std::shared_ptr<arrow::Array> a;
+        (void)b.Finish(&a);
+        return a;
+    };
+
+    arrow::StringBuilder ts_b;
+    (void)ts_b.AppendValues(ts_col);
+    std::shared_ptr<arrow::Array> ts_arr;
+    (void)ts_b.Finish(&ts_arr);
+
+    arrow::Int64Builder recv_b;
+    (void)recv_b.AppendValues(recv_col);
+    std::shared_ptr<arrow::Array> recv_arr;
+    (void)recv_b.Finish(&recv_arr);
+
+    std::vector<std::shared_ptr<arrow::Field>> fields = {
+        arrow::field("timestamp", arrow::utf8()),
+        arrow::field("recv_ns", arrow::int64()),
+    };
+    std::vector<std::shared_ptr<arrow::Array>> arrays = {ts_arr, recv_arr};
+
+    for (int i = 0; i < 5; ++i) {
+        std::string s = std::to_string(i + 1);
+        fields.push_back(arrow::field("bid_px_" + s, arrow::float64()));
+        arrays.push_back(make_doubles(bid_px[i]));
+        fields.push_back(arrow::field("bid_sz_" + s, arrow::float64()));
+        arrays.push_back(make_doubles(bid_sz[i]));
+        fields.push_back(arrow::field("ask_px_" + s, arrow::float64()));
+        arrays.push_back(make_doubles(ask_px[i]));
+        fields.push_back(arrow::field("ask_sz_" + s, arrow::float64()));
+        arrays.push_back(make_doubles(ask_sz[i]));
+    }
+
+    auto table = arrow::Table::Make(arrow::schema(fields), arrays);
+    auto outfile =
+        arrow::io::FileOutputStream::Open("data/btc_cpp.parquet").ValueOrDie();
+    arrow::Status st = parquet::arrow::WriteTable(
+        *table, arrow::default_memory_pool(), outfile, 100000);
+    if (!st.ok()) std::cerr << "parquet write failed: " << st.ToString() << "\n";
+
+    // benchmark report
     std::sort(latencies_ns.begin(), latencies_ns.end());
     size_t n = latencies_ns.size();
     if (n > 0) {
@@ -106,6 +150,6 @@ int main() {
         std::cout << "latency p99: " << p99_us << " us\n";
     }
     ix::uninitNetSystem();
-    std::cout << "capture done -> data/btc_cpp.csv\n";
+    std::cout << "capture done -> data/btc_cpp.parquet\n";
     return 0;
 }
