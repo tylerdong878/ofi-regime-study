@@ -6,10 +6,8 @@
 
 int main() {
     OrderBook book;
-    book.apply_snapshot(
-        {{100.0, 2.0}, {99.0, 5.0}, {98.0, 1.0}},
-        {{101.0, 3.0}, {102.0, 4.0}, {103.0, 1.0}}
-    );
+    book.apply_snapshot({{100.0, 2.0}, {99.0, 5.0}, {98.0, 1.0}},
+                        {{101.0, 3.0}, {102.0, 4.0}, {103.0, 1.0}});
 
     auto bids = book.top_bids(2);
     assert(bids[0] == std::make_pair(100.0, 2.0));

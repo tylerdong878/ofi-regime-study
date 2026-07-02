@@ -35,7 +35,7 @@ class OrderBook:
 
     def top_n(self, n=5):
         """Return the best n levels per side as (price, size) tuples, best first.
-        
+
         Best bid = highest price, best ask = lowest price
         """
         n_bids = min(n, len(self.bids))
@@ -43,4 +43,3 @@ class OrderBook:
         bids = [self.bids.peekitem(-1 - i) for i in range(n_bids)]
         asks = [self.asks.peekitem(i) for i in range(n_asks)]
         return bids, asks
-    

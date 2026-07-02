@@ -1,12 +1,12 @@
 #pragma once
 
 #include <map>
-#include <vector>
-#include <utility>
 #include <string>
+#include <utility>
+#include <vector>
 
 class OrderBook {
-public:
+   public:
     void apply_snapshot(const std::vector<std::pair<double, double>>& bids,
                         const std::vector<std::pair<double, double>>& asks) {
         bids_.clear();
@@ -40,7 +40,7 @@ public:
         return result;
     }
 
-private:
+   private:
     std::map<double, double> bids_;
     std::map<double, double> asks_;
 };

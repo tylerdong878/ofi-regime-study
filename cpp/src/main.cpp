@@ -1,20 +1,19 @@
-#include <iostream>
-#include <filesystem>
-#include <thread>
-#include <chrono>
-#include <vector>
-#include <utility>
-#include <string>
-#include <algorithm>
-#include <cstdint>
-
-#include <ixwebsocket/IXWebSocket.h>
-#include <ixwebsocket/IXNetSystem.h>
-#include <nlohmann/json.hpp>
-
 #include <arrow/api.h>
 #include <arrow/io/api.h>
+#include <ixwebsocket/IXNetSystem.h>
+#include <ixwebsocket/IXWebSocket.h>
 #include <parquet/arrow/writer.h>
+
+#include <algorithm>
+#include <chrono>
+#include <cstdint>
+#include <filesystem>
+#include <iostream>
+#include <nlohmann/json.hpp>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
 
 #include "orderbook.hpp"
 
@@ -36,11 +35,9 @@ int main() {
 
     ws.setOnMessageCallback([&](const ix::WebSocketMessagePtr& msg) {
         if (msg->type == ix::WebSocketMessageType::Open) {
-            json sub = {
-                {"type", "subscribe"},
-                {"product_ids", {"BTC-USD"}},
-                {"channels", {"level2_batch"}}
-            };
+            json sub = {{"type", "subscribe"},
+                        {"product_ids", {"BTC-USD"}},
+                        {"channels", {"level2_batch"}}};
             ws.send(sub.dump());
             return;
         }
@@ -53,21 +50,21 @@ int main() {
         if (type == "snapshot") {
             std::vector<std::pair<double, double>> bids, asks;
             for (const auto& lvl : data["bids"])
-                bids.push_back({std::stod(lvl[0].get<std::string>()),
-                                std::stod(lvl[1].get<std::string>())});
+                bids.push_back(
+                    {std::stod(lvl[0].get<std::string>()), std::stod(lvl[1].get<std::string>())});
             for (const auto& lvl : data["asks"])
-                asks.push_back({std::stod(lvl[0].get<std::string>()),
-                                std::stod(lvl[1].get<std::string>())});
+                asks.push_back(
+                    {std::stod(lvl[0].get<std::string>()), std::stod(lvl[1].get<std::string>())});
             book.apply_snapshot(bids, asks);
         } else if (type == "l2update") {
             for (const auto& ch : data["changes"]) {
-                book.apply_update(ch[0].get<std::string>(),
-                                  std::stod(ch[1].get<std::string>()),
+                book.apply_update(ch[0].get<std::string>(), std::stod(ch[1].get<std::string>()),
                                   std::stod(ch[2].get<std::string>()));
             }
 
             long long recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                std::chrono::system_clock::now().time_since_epoch()).count();
+                                    std::chrono::system_clock::now().time_since_epoch())
+                                    .count();
             auto bids = book.top_bids(5);
             auto asks = book.top_asks(5);
             if (bids.size() < 5 || asks.size() < 5) return;
@@ -131,10 +128,9 @@ int main() {
     }
 
     auto table = arrow::Table::Make(arrow::schema(fields), arrays);
-    auto outfile =
-        arrow::io::FileOutputStream::Open("data/btc_cpp.parquet").ValueOrDie();
-    arrow::Status st = parquet::arrow::WriteTable(
-        *table, arrow::default_memory_pool(), outfile, 100000);
+    auto outfile = arrow::io::FileOutputStream::Open("data/btc_cpp.parquet").ValueOrDie();
+    arrow::Status st =
+        parquet::arrow::WriteTable(*table, arrow::default_memory_pool(), outfile, 100000);
     if (!st.ok()) std::cerr << "parquet write failed: " << st.ToString() << "\n";
 
     // benchmark report
@@ -142,7 +138,7 @@ int main() {
     size_t n = latencies_ns.size();
     if (n > 0) {
         double elapsed_s = std::chrono::duration<double>(end - start).count();
-        double p50_us = latencies_ns[n/2] / 1000.0;
+        double p50_us = latencies_ns[n / 2] / 1000.0;
         double p99_us = latencies_ns[(size_t)(n * 0.99)] / 1000.0;
         std::cout << "messages processed: " << n << "\n";
         std::cout << "throughput: " << (n / elapsed_s) << " msg/sec\n";
