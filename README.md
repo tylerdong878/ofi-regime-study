@@ -2,8 +2,8 @@
 
 Quantitative research into whether **order flow imbalance (OFI)** predicts short-term price movement in crypto markets - and whether that relationship changes between **high- and low-volatility regimes**. Based on Cont, Kukanov & Stoikov (2014).
 
-> **Status:** Phase 1 (Python end-to-end) complete. C++ ingestion rewrite, multi-level
-> OFI, and Hawkes-process modeling are planned
+> **Status:** Phase 1 (Python reaserch pipeline) and the C++ ingestion layer are complete.
+> Multi-level OFI, Hawkes-process modeling, and continuous multi-day cappture (EC2) are next.
 
 ## Research question
 
@@ -55,12 +55,28 @@ python -m tests.test_orderbook && python -m tests.test_ofi && python -m tests.te
 # then open notebooks/01_first_results.ipynb
 ```
 
+## C++ ingestion layer
+
+The ingestion layer (order book reconstruction + live capture) is implemented in C++ for low-latency processing. It connects to Coinbase over a TLS WebSocket, reconstructs the L2 book with `std::map`, and writes **Parquet** tick data that the Python research layer reads unchanged (via Apache Arrow).
+
+```bash
+sudo dnf install libarrow-devel parquet-libs-devel # one-time deps
+cmake -S cpp -B cpp/build
+cmake --build cpp/build
+./cpp.build/ingest         # captures ~30s -> data/btc_cpp.parquet
+./cpp/build/test_orderbook # order book unit tests
+```
+
+Measured on live BTC-USD (30-second sample): per-update processing latency
+p50 ~0.4 ms, p99 ~2.5 ms (incl. Parquet serialization); throughput is feed-limited at ~16 batched updates/sec.
+
 ## Roadmap
 
+- [x] C++ rewrite of the ingestion layer + latency benchmarks
+- [x] C++ writes Parquet (Apache Arrow), read by the Pytokay hon layer
 - [ ] Multi-day, multi-asset capture (BTC, ETH, SOL)
 - [ ] Multi-level OFI (levels 1-5)
 - [ ] Hawkes process for order-arrival clustering
-- [ ] C++ rewrite of the ingestion layer + latency benchmarks
 - [ ] Blog post writeup
 
 ## Reference
