@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 
-from src.ofi_study.ofi import ofi_level1
+from src.ofi_study.ofi import ofi_multi_level, ofi_at_level
 from src.ofi_study.regime import realized_vol, classify_regime
 
 
@@ -13,13 +13,13 @@ def load(path):
     return df.set_index("timestamp").sort_index()
 
 
-def build_features(df, bucket="1s", horizon=5, vol_window=300):
+def build_features(df, bucket="1s", horizon=5, vol_window=300, ofi_levels=5):
     """Aggregate raw snapshots into a per-bucket modeling frame.
 
     Returns columns: ofi (summed per bucket), mid, ret, fwd_ret, vol, regime.
     """
     df = df.copy()
-    df["ofi"] = ofi_level1(df)
+    df["ofi"] = ofi_multi_level(df, ofi_levels)
     df["mid"] = (df["bid_px_1"] + df["ask_px_1"]) / 2.0
 
     ofi = df["ofi"].resample(bucket).sum()
@@ -34,12 +34,38 @@ def build_features(df, bucket="1s", horizon=5, vol_window=300):
     return frame.dropna(subset=["ofi", "fwd_ret", "regime"])
 
 
+def build_features_by_level(df, bucket="1s", horizon=5, vol_window=300, levels=5):
+    """Like build_features, but keeps each level's OFI as its own column (ofi_1..ofi_N)."""
+    df = df.copy()
+
+    frame = pd.DataFrame()
+    for m in range(1, levels + 1):
+        frame[f"ofi_{m}"] = ofi_at_level(df, m).resample(bucket).sum()
+
+    frame["mid"] = ((df["bid_px_1"] + df["ask_px_1"]) / 2.0).resample(bucket).last().ffill()
+    log_mid = np.log(frame["mid"])
+    frame["ret"] = log_mid.diff()
+    frame["fwd_ret"] = log_mid.shift(-horizon) - log_mid
+    frame["vol"] = realized_vol(frame["ret"], vol_window)
+    frame["regime"] = classify_regime(frame["vol"])
+
+    ofi_cols = [f"ofi_{m}" for m in range(1, levels + 1)]
+    return frame.dropna(subset=ofi_cols + ["fwd_ret", "regime"])
+
+
 def regress(frame, hac_lags=5):
     """OLS of forward return on OFI with Newey-West (HAC) standard errors."""
     X = sm.add_constant(frame["ofi"])
     y = frame["fwd_ret"]
     model = sm.OLS(y, X)
     return model.fit(cov_type="HAC", cov_kwds={"maxlags": hac_lags})
+
+
+def regress_multi(frame, ofi_cols, hac_lags=5):
+    """Multivariate OLS of forward return on several OFI columns, HAC errors."""
+    X = sm.add_constant(frame[ofi_cols])
+    y = frame["fwd_ret"]
+    return sm.OLS(y, X).fit(cov_type="HAC", cov_kwds={"maxlags": hac_lags})
 
 
 def directional_accuracy(frame):
