@@ -76,3 +76,35 @@ def directional_accuracy(frame):
     accuracy = (pred[mask] == actual[mask]).mean()
     baseline = actual[mask].value_counts(normalize=True).max()
     return accuracy, baseline
+
+
+def load_bucketed(path, bucket="1s", levels=1):
+    """Load one capture file, reduced to per-bucket OFI and mid price.
+
+    Reducing each file before concatenating keeps memory bounded: a 57k-row
+    file collapses to ~3.6k rows.
+    """
+    cols = ["timestamp"] + [f"{s}_{i}" for i in range(1, levels + 1)
+                            for s in ("bid_px", "bid_sz", "ask_px", "ask_sz")]
+    df = pd.read_parquet(path, columns=cols)
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df = df.set_index("timestamp").sort_index()
+
+    ofi = ofi_multi_level(df, levels).resample(bucket).sum()
+    mid = ((df["bid_px_1"] + df["ask_px_1"]) / 2.0).resample(bucket).last()
+    return pd.DataFrame({"ofi": ofi, "mid": mid})
+
+
+def build_features_many(paths, bucket="1s", horizon=5, vol_window=300, levels=1):
+    """Build the modeling frame from many capture files."""
+    frame = pd.concat([load_bucketed(p, bucket, levels) for p in sorted(paths)])
+    frame = frame.sort_index()
+    frame = frame[~frame.index.duplicated(keep="last")]
+    frame["mid"] = frame["mid"].ffill()
+
+    log_mid = np.log(frame["mid"])
+    frame["ret"] = log_mid.diff()
+    frame["fwd_ret"] = log_mid.shift(-horizon) - log_mid
+    frame["vol"] = realized_vol(frame["ret"], vol_window)
+    frame["regime"] = classify_regime(frame["vol"])
+    return frame.dropna(subset=["ofi", "fwd_ret", "regime"])
